@@ -11,6 +11,7 @@ import format from './format'
 import theme from './theme'
 import type Keybindings from '../../keyboard/shortcutHandler'
 import type Preference from '../../preferences'
+import type { RecentlyUsedDocuments } from '../recentlyUsed'
 
 export { default as dockMenu } from './dock'
 
@@ -32,16 +33,16 @@ export const configSettingMenu = (keybindings: Keybindings): MenuItemConstructor
  *
  * @param keybindings The keybindings instance.
  * @param preferences The preference instance.
- * @param recentlyUsedFiles The recently used files.
+ * @param recentlyUsedDocuments Separated recently used files and directories.
  */
 export default function(
   keybindings: Keybindings,
   preferences: Preference,
-  recentlyUsedFiles: string[] = []
+  recentlyUsedDocuments: RecentlyUsedDocuments = { files: [], directories: [] }
 ): MenuItemConstructorOptions[] {
   return [
     ...(process.platform === 'darwin' ? [marktext(keybindings)] : []),
-    file(keybindings, preferences, recentlyUsedFiles),
+    file(keybindings, preferences, recentlyUsedDocuments),
     edit(keybindings),
     paragraph(keybindings, preferences),
     format(keybindings),

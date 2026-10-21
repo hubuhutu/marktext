@@ -162,7 +162,6 @@ export interface BootstrapEditorConfig {
   sourceCodeModeEnabled: boolean
   preferences?: unknown
   userKeybindings?: unknown
-  recentlyUsedFiles?: string[]
   windowId?: number
   [key: string]: unknown
 }

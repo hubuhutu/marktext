@@ -6,11 +6,12 @@ import { t } from '../../i18n'
 import type Keybindings from '../../keyboard/shortcutHandler'
 import type Preference from '../../preferences'
 import { PANDOC_EXPORT_FORMATS } from '../../utils/pandoc'
+import type { RecentlyUsedDocuments } from '../recentlyUsed'
 
 export default function(
   keybindings: Keybindings,
   userPreference: Preference,
-  recentlyUsedFiles: string[]
+  recentlyUsedDocuments: RecentlyUsedDocuments
 ): MenuItemConstructorOptions {
   const { autoSave, showPandocConvert } = userPreference.getAll()
   const submenu: MenuItemConstructorOptions[] = [
@@ -53,13 +54,15 @@ export default function(
   }
 
   if (!isOsx) {
+    const { files, directories } = recentlyUsedDocuments
+    const hasRecentItems = files.length > 0 || directories.length > 0
     const recentlyUsedSubmenu: MenuItemConstructorOptions[] = []
     const recentlyUsedMenu: MenuItemConstructorOptions = {
       label: t('menu.file.openRecent'),
       submenu: recentlyUsedSubmenu
     }
 
-    for (const item of recentlyUsedFiles) {
+    const pushRecentPath = (item: string): void => {
       recentlyUsedSubmenu.push({
         label: item,
         click(menuItem, browserWindow) {
@@ -70,14 +73,25 @@ export default function(
       })
     }
 
+    // Directories first, then files, matching the common "Open Recent" grouping.
+    for (const item of directories) {
+      pushRecentPath(item)
+    }
+    if (directories.length > 0 && files.length > 0) {
+      recentlyUsedSubmenu.push({ type: 'separator' })
+    }
+    for (const item of files) {
+      pushRecentPath(item)
+    }
+
     recentlyUsedSubmenu.push(
       {
         type: 'separator',
-        visible: recentlyUsedFiles.length > 0
+        visible: hasRecentItems
       },
       {
         label: t('menu.file.clearRecentlyUsed'),
-        enabled: recentlyUsedFiles.length > 0,
+        enabled: hasRecentItems,
         click() {
           actions.clearRecentlyUsed()
         }

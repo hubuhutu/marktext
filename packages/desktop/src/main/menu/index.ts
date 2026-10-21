@@ -14,9 +14,16 @@ import { setLanguage } from '../i18n.js'
 import type Preference from '../preferences'
 import type Keybindings from '../keyboard/shortcutHandler'
 import type { IUserPreferences } from '@shared/types/preferences'
+import {
+  MAX_RECENTLY_USED_DOCUMENTS,
+  normalizeRecentlyUsedDocuments,
+  prependRecentPath,
+  type RecentlyUsedDocuments
+} from './recentlyUsed'
+
+export type { RecentlyUsedDocuments } from './recentlyUsed'
 
 const RECENTLY_USED_DOCUMENTS_FILE_NAME = 'recently-used-documents.json'
-const MAX_RECENTLY_USED_DOCUMENTS = 12
 
 export const MenuType = {
   DEFAULT: 0,
@@ -80,62 +87,48 @@ class AppMenu {
    * @param filePath The file or directory full path.
    */
   addRecentlyUsedDocument(filePath: string): void {
-    const { isOsxOrWindows, RECENTS_PATH } = this
+    const { isOsxOrWindows } = this
 
     if (isOsxOrWindows) app.addRecentDocument(filePath)
     if (isOsx) return
 
     const recentDocuments = this.getRecentlyUsedDocuments()
-    const index = recentDocuments.indexOf(filePath)
-    let needSave = index !== 0
-    if (index > 0) {
-      recentDocuments.splice(index, 1)
-    }
-    if (index !== 0) {
-      recentDocuments.unshift(filePath)
-    }
+    const targetList = isDirectory2(filePath)
+      ? recentDocuments.directories
+      : isFile2(filePath)
+        ? recentDocuments.files
+        : null
+    if (!targetList) return
 
-    if (recentDocuments.length > MAX_RECENTLY_USED_DOCUMENTS) {
-      needSave = true
-      recentDocuments.splice(
-        MAX_RECENTLY_USED_DOCUMENTS,
-        recentDocuments.length - MAX_RECENTLY_USED_DOCUMENTS
-      )
-    }
-
+    const needSave = prependRecentPath(targetList, filePath, MAX_RECENTLY_USED_DOCUMENTS)
     this.updateAppMenu(recentDocuments)
 
     if (needSave) {
-      ensureDirSync(this._userDataPath)
-      const json = JSON.stringify(recentDocuments, null, 2)
-      fs.writeFileSync(RECENTS_PATH, json, 'utf-8')
+      this._saveRecentlyUsedDocuments(recentDocuments)
     }
   }
 
   /**
-   * Returns a list of all recently used documents and folders.
+   * Returns recently used files and directories as separate lists.
+   * Migrates the legacy flat `string[]` format on read.
    */
-  getRecentlyUsedDocuments(): string[] {
+  getRecentlyUsedDocuments(): RecentlyUsedDocuments {
     const { RECENTS_PATH } = this
     if (!isFile2(RECENTS_PATH)) {
-      return []
+      return { files: [], directories: [] }
     }
 
     try {
-      const recentDocuments: string[] = JSON.parse(fs.readFileSync(RECENTS_PATH, 'utf-8')).filter(
-        (f: string) => f && (isFile2(f) || isDirectory2(f))
-      )
+      const raw: unknown = JSON.parse(fs.readFileSync(RECENTS_PATH, 'utf-8'))
+      const { documents, migrated } = normalizeRecentlyUsedDocuments(raw)
 
-      if (recentDocuments.length > MAX_RECENTLY_USED_DOCUMENTS) {
-        recentDocuments.splice(
-          MAX_RECENTLY_USED_DOCUMENTS,
-          recentDocuments.length - MAX_RECENTLY_USED_DOCUMENTS
-        )
+      if (migrated) {
+        this._saveRecentlyUsedDocuments(documents)
       }
-      return recentDocuments
+      return documents
     } catch (err) {
       log.error('Error while read recently used documents:', err)
-      return []
+      return { files: [], directories: [] }
     }
   }
 
@@ -143,15 +136,19 @@ class AppMenu {
    * Clear recently used documents.
    */
   clearRecentlyUsedDocuments(): void {
-    const { isOsxOrWindows, RECENTS_PATH } = this
+    const { isOsxOrWindows } = this
     if (isOsxOrWindows) app.clearRecentDocuments()
     if (isOsx) return
 
-    const recentDocuments: string[] = []
+    const recentDocuments: RecentlyUsedDocuments = { files: [], directories: [] }
     this.updateAppMenu(recentDocuments)
-    const json = JSON.stringify(recentDocuments, null, 2)
+    this._saveRecentlyUsedDocuments(recentDocuments)
+  }
+
+  private _saveRecentlyUsedDocuments(documents: RecentlyUsedDocuments): void {
     ensureDirSync(this._userDataPath)
-    fs.writeFileSync(RECENTS_PATH, json, 'utf-8')
+    const json = JSON.stringify(documents, null, 2)
+    fs.writeFileSync(this.RECENTS_PATH, json, 'utf-8')
   }
 
   /**
@@ -285,7 +282,7 @@ class AppMenu {
    *
    * NOTE: We need this method to add or remove menu items at runtime.
    */
-  updateAppMenu(recentUsedDocuments?: string[]): void {
+  updateAppMenu(recentUsedDocuments?: RecentlyUsedDocuments): void {
     if (!recentUsedDocuments) {
       recentUsedDocuments = this.getRecentlyUsedDocuments()
     }
@@ -431,7 +428,7 @@ class AppMenu {
     })
   }
 
-  _buildEditorMenu(recentUsedDocuments: string[] | null = null): WindowMenuEntry {
+  _buildEditorMenu(recentUsedDocuments: RecentlyUsedDocuments | null = null): WindowMenuEntry {
     if (!recentUsedDocuments) {
       recentUsedDocuments = this.getRecentlyUsedDocuments()
     }
